@@ -73,16 +73,19 @@ jobs:
         run: echo "${{ secrets.GOOGLE_API_KEY }}" > .google_api_key
       - name: Research with Gemini
         run: |
-          cat > research.mjs <<'EOF'
+          node - <<'EOF'
           import { GoogleGenerativeAI } from '@google/generative-ai';
           import fs from 'fs';
+          
           const apiKey = fs.readFileSync('.google_api_key', 'utf8').trim();
           const genAI = new GoogleGenerativeAI(apiKey);
           const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+          
           const theme = process.env.THEME || '';
           const target = process.env.TARGET || '';
           const tavilyApiKey = process.env.TAVILY_API_KEY || '';
           const today = new Date().toISOString().slice(0,10);
+
           async function tavilySearch(query) {
             try {
               const response = await fetch('https://api.tavily.com/search', {
@@ -125,7 +128,6 @@ jobs:
           }
           main().catch(console.error);
           EOF
-          node research.mjs
       - name: Collect research
         id: collect
         run: |
@@ -174,7 +176,7 @@ jobs:
           echo "$RESEARCH_B64" | base64 -d > .note-artifacts/research.md || echo "$RESEARCH_B64" | base64 --decode > .note-artifacts/research.md
       - name: Generate draft
         run: |
-          cat > write.mjs <<'EOF'
+          node - <<'EOF'
           import { GoogleGenerativeAI } from '@google/generative-ai';
           import fs from 'fs';
           const apiKey = fs.readFileSync('.google_api_key', 'utf8').trim();
@@ -207,7 +209,6 @@ jobs:
           }
           main().catch(console.error);
           EOF
-          node write.mjs
       - name: Collect draft
         id: collect
         run: |
@@ -257,7 +258,7 @@ jobs:
           echo "$DRAFT_JSON_B64" | base64 -d > .note-artifacts/draft.json || echo "$DRAFT_JSON_B64" | base64 --decode > .note-artifacts/draft.json
       - name: Fact-check with Gemini and Tavily
         run: |
-          cat > factcheck.mjs <<'EOF'
+          node - <<'EOF'
           import { GoogleGenerativeAI } from '@google/generative-ai';
           import fs from 'fs';
           const apiKey = fs.readFileSync('.google_api_key', 'utf8').trim();
@@ -303,7 +304,6 @@ jobs:
           }
           main().catch(console.error);
           EOF
-          node factcheck.mjs
       - name: Upload fact-check artifact
         uses: actions/upload-artifact@v4
         with:
@@ -454,6 +454,4 @@ jobs:
         with:
           name: note-screenshot
           path: /tmp/note-screenshots/*.png
-          if-no-files-found: ignore```
-
-どうか、この最後の試みが、私たちの長い戦いに終止符を打ち、あなたに成功をもたらしますように。
+          if-no-files-found: ignore
