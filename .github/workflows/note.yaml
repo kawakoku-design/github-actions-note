@@ -79,12 +79,20 @@ jobs:
       - name: Research with Claude Agent SDK
         run: |
           cat > research.js <<'EOF'
-          // ▼▼▼ 変更点：require(...).default を使って、設計図本体を取り出す ▼▼▼
-          const Agent = require('@anthropic-ai/claude-agent-sdk').default;
           const fs = require('fs');
 
+          // ▼▼▼ 変更点：SDKの中身をログに出力して確認し、正しい設計図を取り出す ▼▼▼
+          const ClaudeAgentSDK = require('@anthropic-ai/claude-agent-sdk');
+          
+          console.log('--- SDK Module Structure ---');
+          console.log(ClaudeAgentSDK);
+          console.log('--------------------------');
+
+          // SDKの構造に合わせて、正しい設計図（コンストラクタ）を取得する
+          // .default にある場合と、そうでない場合の両方に対応する
+          const Agent = ClaudeAgentSDK.default || ClaudeAgentSDK;
+
           async function main() {
-            // これ以降のスクリプトは前回と同じです
             const theme = process.env.THEME || '';
             const target = process.env.TARGET || '';
             const today = new Date().toISOString().slice(0, 10);
@@ -101,7 +109,11 @@ jobs:
             const userPrompt = `以下のテーマとターゲットに対する最終版のリサーチレポートを作成してください。\n【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。事実ベースで一次情報を最優先し、本文にMarkdownリンクで出典を埋め込んでください。\n---\nテーマ: ${theme}\nターゲット: ${target}\n現在日付: ${today}`;
 
             try {
-              // この 'new Agent' が正しく動作するようになります
+              if (typeof Agent !== 'function' || !Agent.prototype) {
+                // Agentがコンストラクタでない場合、エラーを投げて終了
+                throw new Error('Failed to load Agent constructor from the SDK.');
+              }
+
               const agent = new Agent({
                 apiKey: process.env.ANTHROPIC_API_KEY,
                 model: 'claude-3-5-sonnet-20240620',
@@ -116,7 +128,7 @@ jobs:
               console.log('Research completed. Final output received.');
 
               fs.writeFileSync(`${artifactsDir}/research.md`, result.output || '');
-              fs.writeFileSync(`${artifactsDir}/research_trace.json`, JSON.stringify(result.history || [], null, 2));
+              fs.writeFileSync(`${artifacts.Dir}/research_trace.json`, JSON.stringify(result.history || [], null, 2));
 
             } catch (error) {
               console.error("An error occurred during research:", error);
@@ -129,6 +141,7 @@ jobs:
           EOF
           node research.js
 
+      # これ以降のステップは変更ありません
       - name: Collect research
         id: collect
         run: |
