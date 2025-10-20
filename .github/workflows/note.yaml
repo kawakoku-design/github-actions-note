@@ -76,7 +76,7 @@ jobs:
       - name: Research with Claude Agent SDK
         run: |
           cat > research.mjs <<'EOF'
-          import { Agent } from '@anthropic-ai/claude-agent-sdk';
+          import Agent from '@anthropic-ai/claude-agent-sdk';
           import fs from 'fs';
 
           async function main() {
