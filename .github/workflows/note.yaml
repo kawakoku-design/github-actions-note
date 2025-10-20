@@ -144,7 +144,6 @@ jobs:
           path: |
             .note-artifacts/research.md
             .note-artifacts/research_trace.json
-            
   write:
     name: Write (Claude Sonnet 4.0)
     needs: research
