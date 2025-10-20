@@ -66,42 +66,67 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Claude Code SDK
+      # ▼▼▼ 変更点 1: インストールするパッケージ名を新しいものに変更 ▼▼▼
+      - name: Install Claude Agent SDK
         run: |
           npm init -y
-          npm i @anthropic-ai/claude-code
+          npm i @anthropic-ai/claude-agent-sdk
 
-      - name: Research with Claude Code SDK
+      # ▼▼▼ 変更点 2: スクリプトを新しいSDKの使い方に書き換え ▼▼▼
+      - name: Research with Claude Agent SDK
         run: |
           cat > research.mjs <<'EOF'
-          import { query } from '@anthropic-ai/claude-code';
+          import { Agent } from '@anthropic-ai/claude-agent-sdk';
           import fs from 'fs';
-          const theme = process.env.THEME || '';
-          const target = process.env.TARGET || '';
-          const today = new Date().toISOString().slice(0,10);
-          const artifactsDir = '.note-artifacts';
-          fs.mkdirSync(artifactsDir, { recursive: true });
-          const sys = [
-            'あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。',
-            '事実ベース・一次情報優先・本文内にMarkdownリンクで出典を埋め込むこと。',
-            '十分な分量（目安: 2,000語以上）。各節で出典を本文に埋め込む。',
-            'WebSearch と WebFetch を必ず使用し、一次情報（公的機関・規格・論文・公式）を優先する。',
-          ].join('\n');
-          const userPrompt = `以下のテーマとターゲットに対する最終版のリサーチレポートを作成してください。\n【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。事実ベースで一次情報を最優先し、本文にMarkdownリンクで出典を埋め込んでください。\n---\nテーマ: ${theme}\nターゲット: ${target}\n現在日付: ${today}`;
-          const messages = [];
-          for await (const msg of query({
-            prompt: userPrompt,
-            options: {
-              customSystemPrompt: sys,
-              allowedTools: ['WebSearch','WebFetch'],
-              permissionMode: 'acceptEdits',
-            },
-          })) { messages.push(msg); }
-          const assistantTexts = messages.filter(m=>m.type==='assistant').map(m=>{
-            const c=m.message?.content; if(Array.isArray(c)){return c.filter(b=>b?.type==='text').map(b=>b.text).join('\n');} return '';
-          }).filter(Boolean).join('\n\n');
-          fs.writeFileSync(`${artifactsDir}/research.md`, assistantTexts || '');
-          try { fs.writeFileSync(`${artifactsDir}/research_trace.json`, JSON.stringify(messages, null, 2)); } catch {}
+
+          async function main() {
+            const theme = process.env.THEME || '';
+            const target = process.env.TARGET || '';
+            const today = new Date().toISOString().slice(0, 10);
+            const artifactsDir = '.note-artifacts';
+            fs.mkdirSync(artifactsDir, { recursive: true });
+
+            // システムプロンプトを定義（元のコードの意図を再現）
+            const systemPrompt = [
+              'あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。',
+              '事実ベース・一次情報優先・本文内にMarkdownリンクで出典を埋め込むこと。',
+              '十分な分量（目安: 2,000語以上）。各節で出典を本文に埋め込む。',
+              'WebSearch と WebFetch を必ず使用し、一次情報（公的機関・規格・論文・公式）を優先する。',
+            ].join('\n');
+            
+            // ユーザープロンプトを定義（元のコードの意図を再現）
+            const userPrompt = `以下のテーマとターゲットに対する最終版のリサーチレポートを作成してください。\n【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。事実ベースで一次情報を最優先し、本文にMarkdownリンクで出典を埋め込んでください。\n---\nテーマ: ${theme}\nターゲット: ${target}\n現在日付: ${today}`;
+
+            try {
+              // 1. 新しいAgent SDKのインスタンスを作成
+              const agent = new Agent({
+                apiKey: process.env.ANTHROPIC_API_KEY,
+                model: 'claude-3-5-sonnet-20240620', // 最新の高性能モデルを推奨
+                system: systemPrompt,
+              });
+
+              // 2. runメソッドでエージェントを実行
+              const result = await agent.run({
+                input: userPrompt,
+                tools: ['webSearch', 'webFetch'], // 使用するツールを指定
+              });
+              
+              console.log('Research completed. Final output received.');
+
+              // 3. 結果をファイルに書き出す（後続のジョブがこれを読み取る）
+              fs.writeFileSync(`${artifactsDir}/research.md`, result.output || '');
+              // 互換性のために空のtraceファイルも作成
+              fs.writeFileSync(`${artifactsDir}/research_trace.json`, JSON.stringify(result.history || [], null, 2));
+
+            } catch (error) {
+              console.error("An error occurred during research:", error);
+              // エラーが発生した場合も、後続のジョブが失敗しないように空ファイルを作成
+              fs.writeFileSync(`${artifactsDir}/research.md`, `リサーチ中にエラーが発生しました: ${error.message}`);
+              fs.writeFileSync(`${artifactsDir}/research_trace.json`, '{}');
+              process.exit(1);
+            }
+          }
+          main();
           EOF
           node research.mjs
 
@@ -120,7 +145,6 @@ jobs:
           path: |
             .note-artifacts/research.md
             .note-artifacts/research_trace.json
-
   write:
     name: Write (Claude Sonnet 4.0)
     needs: research
