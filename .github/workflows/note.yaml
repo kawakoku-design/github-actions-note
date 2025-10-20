@@ -65,19 +65,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          # ▼▼▼ 変更点 1: キャッシュを無効化する設定を追加 ▼▼▼
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
 
-      # ▼▼▼ 変更点 1: インストールするパッケージ名を新しいものに変更 ▼▼▼
+      # ▼▼▼ 変更点 2: キャッシュをクリアするステップを追加 ▼▼▼
+      - name: Clear npm cache
+        run: npm cache clean --force
+
       - name: Install Claude Agent SDK
         run: |
           npm init -y
           npm i @anthropic-ai/claude-agent-sdk
 
-      # ▼▼▼ 変更点 2: スクリプトを新しいSDKの使い方に書き換え ▼▼▼
       - name: Research with Claude Agent SDK
         run: |
-          cat > research.mjs <<'EOF'
-          import Agent from '@anthropic-ai/claude-agent-sdk';
-          import fs from 'fs';
+          # ▼▼▼ 変更点 3: スクリプトを.js形式にし、requireを使うように変更 ▼▼▼
+          cat > research.js <<'EOF'
+          const Agent = require('@anthropic-ai/claude-agent-sdk');
+          const fs = require('fs');
 
           async function main() {
             const theme = process.env.THEME || '';
@@ -86,7 +92,6 @@ jobs:
             const artifactsDir = '.note-artifacts';
             fs.mkdirSync(artifactsDir, { recursive: true });
 
-            // システムプロンプトを定義（元のコードの意図を再現）
             const systemPrompt = [
               'あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。',
               '事実ベース・一次情報優先・本文内にMarkdownリンクで出典を埋め込むこと。',
@@ -94,33 +99,27 @@ jobs:
               'WebSearch と WebFetch を必ず使用し、一次情報（公的機関・規格・論文・公式）を優先する。',
             ].join('\n');
             
-            // ユーザープロンプトを定義（元のコードの意図を再現）
             const userPrompt = `以下のテーマとターゲットに対する最終版のリサーチレポートを作成してください。\n【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。事実ベースで一次情報を最優先し、本文にMarkdownリンクで出典を埋め込んでください。\n---\nテーマ: ${theme}\nターゲット: ${target}\n現在日付: ${today}`;
 
             try {
-              // 1. 新しいAgent SDKのインスタンスを作成
               const agent = new Agent({
                 apiKey: process.env.ANTHROPIC_API_KEY,
-                model: 'claude-3-5-sonnet-20240620', // 最新の高性能モデルを推奨
+                model: 'claude-3-5-sonnet-20240620',
                 system: systemPrompt,
               });
 
-              // 2. runメソッドでエージェントを実行
               const result = await agent.run({
                 input: userPrompt,
-                tools: ['webSearch', 'webFetch'], // 使用するツールを指定
+                tools: ['webSearch', 'webFetch'],
               });
               
               console.log('Research completed. Final output received.');
 
-              // 3. 結果をファイルに書き出す（後続のジョブがこれを読み取る）
               fs.writeFileSync(`${artifactsDir}/research.md`, result.output || '');
-              // 互換性のために空のtraceファイルも作成
               fs.writeFileSync(`${artifactsDir}/research_trace.json`, JSON.stringify(result.history || [], null, 2));
 
             } catch (error) {
               console.error("An error occurred during research:", error);
-              // エラーが発生した場合も、後続のジョブが失敗しないように空ファイルを作成
               fs.writeFileSync(`${artifactsDir}/research.md`, `リサーチ中にエラーが発生しました: ${error.message}`);
               fs.writeFileSync(`${artifactsDir}/research_trace.json`, '{}');
               process.exit(1);
@@ -128,7 +127,7 @@ jobs:
           }
           main();
           EOF
-          node research.mjs
+          node research.js
 
       - name: Collect research
         id: collect
@@ -145,6 +144,7 @@ jobs:
           path: |
             .note-artifacts/research.md
             .note-artifacts/research_trace.json
+            
   write:
     name: Write (Claude Sonnet 4.0)
     needs: research
