@@ -65,11 +65,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # ▼▼▼ 変更点 1: キャッシュを無効化する設定を追加 ▼▼▼
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
 
-      # ▼▼▼ 変更点 2: キャッシュをクリアするステップを追加 ▼▼▼
       - name: Clear npm cache
         run: npm cache clean --force
 
@@ -80,12 +78,13 @@ jobs:
 
       - name: Research with Claude Agent SDK
         run: |
-          # ▼▼▼ 変更点 3: スクリプトを.js形式にし、requireを使うように変更 ▼▼▼
           cat > research.js <<'EOF'
-          const Agent = require('@anthropic-ai/claude-agent-sdk');
+          // ▼▼▼ 変更点：require(...).default を使って、設計図本体を取り出す ▼▼▼
+          const Agent = require('@anthropic-ai/claude-agent-sdk').default;
           const fs = require('fs');
 
           async function main() {
+            // これ以降のスクリプトは前回と同じです
             const theme = process.env.THEME || '';
             const target = process.env.TARGET || '';
             const today = new Date().toISOString().slice(0, 10);
@@ -102,6 +101,7 @@ jobs:
             const userPrompt = `以下のテーマとターゲットに対する最終版のリサーチレポートを作成してください。\n【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。事実ベースで一次情報を最優先し、本文にMarkdownリンクで出典を埋め込んでください。\n---\nテーマ: ${theme}\nターゲット: ${target}\n現在日付: ${today}`;
 
             try {
+              // この 'new Agent' が正しく動作するようになります
               const agent = new Agent({
                 apiKey: process.env.ANTHROPIC_API_KEY,
                 model: 'claude-3-5-sonnet-20240620',
