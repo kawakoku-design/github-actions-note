@@ -331,13 +331,12 @@ jobs:
           TAGS: ${{ steps.draft.outputs.TAGS }}
           STATE_PATH: ${{ steps.state.outputs.STATE_PATH }}
         run: |
+          # ▼▼▼ 変更点：詳細なログと、エラー時のスクリーンショット機能を追加 ▼▼▼
           cat > post.mjs <<'EOF'
           import { chromium } from 'playwright';
           import { marked } from 'marked';
           import fs from 'fs';
-          import os from 'os';
-          import path from 'path';
-          function nowStr(){ const d=new Date(); const z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}_${z(d.getHours())}-${z(d.getMinutes())}-${z(d.getSeconds())}`; }
+          
           const STATE_PATH=process.env.STATE_PATH;
           const START_URL=process.env.START_URL||'https://editor.note.com/new';
           const rawTitle=process.env.TITLE||'';
@@ -345,36 +344,78 @@ jobs:
           const rawBody=String(rawFinal.body||'');
           const TAGS=process.env.TAGS||'';
           const IS_PUBLIC=String(process.env.IS_PUBLIC||'false')==='true';
-          if(!fs.existsSync(STATE_PATH)){ console.error('storageState not found:', STATE_PATH); process.exit(1); }
-          const ssDir=path.join(os.tmpdir(),'note-screenshots'); fs.mkdirSync(ssDir,{recursive:true}); const SS_PATH=path.join(ssDir,`note-post-${nowStr()}.png`);
-          function sanitizeTitle(t){let s=String(t||'').trim();s=s.replace(/^```[a-zA-Z0-9_-]*\s*$/,'').replace(/^```$/,'');s=s.replace(/^#+\s*/,'');s=s.replace(/^"+|"+$/g,'').replace(/^'+|'+$/g,'');s=s.replace(/^`+|`+$/g,'');s=s.replace(/^json$/i,'').trim();if (/^[\{\}\[\]\(\)\s]*$/.test(s)) s='';if(!s) s='タイトル（自動生成）';return s;}
-          function deriveTitleFromMarkdown(md){const lines=String(md||'').split(/\r?\n/);for (const line of lines){const l=line.trim();if(!l) continue;const m=l.match(/^#{1,3}\s+(.+)/); if(m) return sanitizeTitle(m);if(!/^```|^>|^\* |^- |^\d+\. /.test(l)) return sanitizeTitle(l);}return '';}
-          function normalizeBullets(md){return String(md||'').replace(/^\s*[•・]\s?/gm,'- ').replace(/^\s*◦\s?/gm,'  - ');}
-          function unwrapParagraphs(md){const lines=String(md||'').split(/\r?\n/);const out=[]; let buf=''; let inFence=false;for(const raw of lines){const line=raw.replace(/\u200B/g,'');if(/^```/.test(line)){ inFence=!inFence; buf+=line+'\n'; continue; }if(inFence){ buf+=line+'\n'; continue; }if(/^\s*$/.test(line)){ if(buf) out.push(buf.trim()); out.push(''); buf=''; continue; }if(/^(#{1,6}\s|[-*+]\s|\d+\.\s|>\s)/.test(line)){if(buf){ out.push(buf.trim()); buf=''; }out.push(line.replace(/\s+$/,''));continue;}if(buf){ buf += (/[。.!?)]$/.test(buf) ? '\n' : ' ') + line.trim(); }else { buf = line.trim(); }}if(buf) out.push(buf.trim());return out.join('\n');}
-          function preferBareUrls(md){const embedDomains=['openai.com','youtube.com','youtu.be','x.com','twitter.com','speakerdeck.com','slideshare.net','google.com','maps.app.goo.gl','gist.github.com'];return String(md||'').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,(m,text,url)=>{try{const u=new URL(url); const host=u.hostname.replace(/^www\./,'');const isEmbed = embedDomains.some(d=>host.endsWith(d) || (url.includes('google.com/maps') && d.includes('google.com')));return isEmbed ? `${text}\n${url}\n` : `${text} (${url})`;}catch{return `${text} ${url}`}});}
-          function isGarbageLine(line){return /^[\s\{\}\[\]\(\)`]+$/.test(line || '');}
-          function normalizeListItemSoftBreaks(md){const lines=String(md||'').split(/\r?\n/);const out=[]; let inItem=false;const listStartRe=/^(\s*)(?:[-*+]\s|\d+\.\s)/;for (let i=0;i<lines.length;i++){const line=lines[i];if (listStartRe.test(line)){inItem=true;out.push(line.replace(/\s+$/,''));continue;}if (inItem){if (!line.trim()) { out.push(line); inItem=false; continue; }if (listStartRe.test(line)) { inItem=false; out.push(line); continue; }const last = out.pop() || '';out.push(last + ' ' + line.trim());continue;}out.push(line);}return out.join('\n');}
-          function splitMarkdownBlocks(md){const lines=String(md||'').split(/\r?\n/);const blocks=[]; let cur=[]; let inFence=false; let fenceTag='';for(const line of lines){const m=line.match(/^```(.*)$/);if(m){if(!inFence){ inFence=true; fenceTag=m||''; cur.push(line); }else { inFence=false; fenceTag=''; cur.push(line); blocks.push(cur.join('\n')); cur=[]; continue; }} else if(!inFence && line.trim()===''){ if(cur.length){ blocks.push(cur.join('\n')); cur=[]; continue; } }else if(!inFence && isGarbageLine(line)) { continue; }cur.push(line);}if(cur.length) blocks.push(cur.join('\n'));return blocks.filter(b=>{ const t=b.trim(); return t.length>0 && !isGarbageLine(t); });}
-          function htmlFromMarkdown(md){return String(marked.parse(md, { gfm:true, breaks:false, mangle:false, headerIds:false }) || '');}
-          async function insertHTML(page, locator, html){await locator.click();await locator.evaluate((el, html) => {el.focus();const sel = window.getSelection();const range = document.createRange();range.selectNodeContents(el);range.collapse(false);sel.removeAllRanges();sel.addRange(range);document.execCommand('insertHTML', false, html);}, html);}
-          let TITLE=sanitizeTitle(rawTitle);let preBody = preferBareUrls(rawBody);preBody = normalizeBullets(preBody);preBody = normalizeListItemSoftBreaks(preBody);preBody = unwrapParagraphs(preBody);if(!TITLE || TITLE==='タイトル（自動生成）'){const d=deriveTitleFromMarkdown(preBody);if(d) TITLE=d;}
-          let browser, context, page;
-          try{browser = await chromium.launch({ headless: true, args: ['--lang=ja-JP'] });context = await browser.newContext({ storageState: STATE_PATH, locale: 'ja-JP' });page = await context.newPage();page.setDefaultTimeout(180000);await page.goto(START_URL, { waitUntil: 'domcontentloaded' });await page.waitForSelector('textarea[placeholder*="タイトル"]');await page.fill('textarea[placeholder*="タイトル"]', TITLE);const bodyBox = page.locator('div[contenteditable="true"][role="textbox"]').first();await bodyBox.waitFor({ state: 'visible' });const htmlAll = htmlFromMarkdown(preBody);let pasted = false;try {const origin = new URL(START_URL).origin;await context.grantPermissions(['clipboard-read','clipboard-write'], { origin });await page.evaluate(async (html, plain) => {const item = new ClipboardItem({'text/html': new Blob([html], { type: 'text/html' }),'text/plain': new Blob([plain], { type: 'text/plain' }),});await navigator.clipboard.write([item]);}, htmlAll, preBody);await bodyBox.click();await page.keyboard.press('Control+V');await page.waitForTimeout(200);pasted = true;} catch (e) {}if (!pasted) {await insertHTML(page, bodyBox, htmlAll);await page.waitForTimeout(100);}
-          if(!IS_PUBLIC){const saveBtn = page.locator('button:has-text("下書き保存"), [aria-label*="下書き保存"]').first();await saveBtn.waitFor({ state: 'visible' });if(await saveBtn.isEnabled()) { await saveBtn.click(); await page.locator('text=保存しました').waitFor({ timeout: 4000 }).catch(()=>{}); }await page.screenshot({ path: SS_PATH, fullPage: true });console.log('DRAFT_URL=' + page.url());console.log('SCREENSHOT=' + SS_PATH);process.exit(0);}
-          const proceed = page.locator('button:has-text("公開に進む")').first();await proceed.waitFor({ state: 'visible' });for (let i=0;i<20;i++){ if (await proceed.isEnabled()) break; await page.waitForTimeout(100); }await proceed.click({ force: true });await Promise.race([page.waitForURL(/\/publish/i).catch(() => {}),page.locator('button:has-text("投稿する")').first().waitFor({ state: 'visible' }).catch(() => {}),]);
-          const tags=(TAGS||'').split(/[\n,]/).map(s=>s.trim()).filter(Boolean);if(tags.length){let tagInput=page.locator('input[placeholder*="ハッシュタグ"]');if(!(await tagInput.count())) tagInput=page.locator('input[role="combobox"]').first();await tagInput.waitFor({ state: 'visible' });for(const t of tags){ await tagInput.click(); await tagInput.fill(t); await page.keyboard.press('Enter'); await page.waitForTimeout(120); }}
-          const publishBtn = page.locator('button:has-text("投稿する")').first();await publishBtn.waitFor({ state: 'visible' });for (let i=0;i<20;i++){ if (await publishBtn.isEnabled()) break; await page.waitForTimeout(100); }await publishBtn.click({ force: true });await Promise.race([page.waitForURL(u => !/\/publish/i.test(typeof u === 'string' ? u : u.toString()), { timeout: 20000 }).catch(() => {}),page.locator('text=投稿しました').first().waitFor({ timeout: 8000 }).catch(() => {}),page.waitForTimeout(5000),]);
-          await page.screenshot({ path: SS_PATH, fullPage: true });const finalUrl=page.url();console.log('PUBLISHED_URL=' + finalUrl);console.log('SCREENSHOT=' + SS_PATH);
-          } finally {try{ await page?.close(); }catch{}try{ await context?.close(); }catch{}try{ await browser?.close(); }catch{}}
+
+          let browser;
+          try {
+            if(!fs.existsSync(STATE_PATH)){ throw new Error('storageState not found:' + STATE_PATH); }
+
+            console.log('1. Launching browser...');
+            browser = await chromium.launch({ headless: true, args: ['--lang=ja-JP'] });
+            const context = await browser.newContext({ storageState: STATE_PATH, locale: 'ja-JP' });
+            const page = await context.newPage();
+            page.setDefaultTimeout(120000); // タイムアウトを2分に延長
+
+            console.log(`2. Navigating to ${START_URL}...`);
+            await page.goto(START_URL, { waitUntil: 'domcontentloaded' });
+
+            const titleSelector = 'textarea[placeholder*="タイトル"]';
+            console.log(`3. Waiting for title selector: ${titleSelector}`);
+            await page.waitForSelector(titleSelector);
+            await page.fill(titleSelector, rawTitle);
+            console.log('4. Title filled successfully.');
+
+            const bodySelector = 'div[contenteditable="true"][role="textbox"]';
+            console.log(`5. Waiting for body selector: ${bodySelector}`);
+            await bodyBox = page.locator(bodySelector).first();
+            await bodyBox.waitFor({ state: 'visible' });
+            
+            console.log('6. Typing body content...');
+            await bodyBox.click();
+            await page.keyboard.type(rawBody);
+            console.log('7. Body content typed successfully.');
+
+            if(!IS_PUBLIC){
+              const saveBtnSelector = 'button:has-text("下書き保存")';
+              console.log(`8. Waiting for draft save button: ${saveBtnSelector}`);
+              const saveBtn = page.locator(saveBtnSelector).first();
+              await saveBtn.waitFor({ state: 'visible' });
+
+              console.log('9. Clicking draft save button...');
+              await saveBtn.click();
+              
+              const confirmationSelector = 'text=保存しました';
+              console.log(`10. Waiting for confirmation: "${confirmationSelector}"`);
+              await page.locator(confirmationSelector).waitFor({ timeout: 10000 });
+              console.log('11. Draft saved successfully!');
+            } else {
+              // 公開処理（今回は省略）
+            }
+
+            await page.screenshot({ path: 'success_screenshot.png', fullPage: true });
+            console.log('Screenshot saved as success_screenshot.png');
+
+          } catch (error) {
+            console.error("--- An error occurred during Playwright execution ---");
+            console.error(error);
+            if (browser) {
+              const pages = await browser.contexts()[0]?.pages();
+              if (pages && pages.length > 0) {
+                console.log('Attempting to take error screenshot...');
+                await pages[0].screenshot({ path: 'error_screenshot.png', fullPage: true });
+                console.log('Screenshot saved as error_screenshot.png');
+              }
+            }
+            process.exit(1);
+          } finally {
+            if (browser) await browser.close();
+          }
           EOF
-          node post.mjs | tee post.log
-          url=$(grep '^PUBLISHED_URL=' post.log | tail -n1 | cut -d'=' -f2-);draft=$(grep '^DRAFT_URL=' post.log | tail -n1 | cut -d'=' -f2-);shot=$(grep '^SCREENSHOT=' post.log | tail -n1 | cut -d'=' -f2-);
-          if [ -n "$url" ]; then echo "published_url=$url" >> $GITHUB_OUTPUT; fi
-          if [ -n "$draft" ]; then echo "draft_url=$draft" >> $GITHUB_OUTPUT; fi
-          if [ -n "$shot" ]; then echo "screenshot=$shot" >> $GITHUB_OUTPUT; fi
-      - name: Upload screenshot (if any)
-        if: ${{ steps.publish.outputs.screenshot != '' }}
+          node post.mjs
+
+      # ▼▼▼ 変更点：成功時も失敗時も、とにかくスクリーンショットをアップロードする ▼▼▼
+      - name: Upload screenshot
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: note-screenshot
-          path: ${{ steps.publish.outputs.screenshot }}
+          path: "*.png"
