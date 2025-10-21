@@ -52,7 +52,9 @@ jobs:
     name: Research (CCSDK WebSearch/WebFetch)
     runs-on: ubuntu-latest
     env:
+      # ▼▼▼ 変更点 1: SDKが認識する可能性のある、両方の名前でAPIキーを設定する ▼▼▼
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CLAUDE_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} 
       THEME: ${{ github.event.inputs.theme }}
       TARGET: ${{ github.event.inputs.target }}
     outputs:
@@ -69,63 +71,49 @@ jobs:
       - name: Install Claude Agent SDK
         run: |
           npm init -y
-          npm i @anthropic-ai/claude-agent-sdk
+          # -g はグローバルインストールを意味し、コマンドとして実行できるようになる
+          npm i -g @anthropic-ai/claude-agent-sdk
 
-      - name: Research with Claude Agent SDK
+      # ▼▼▼ 変更点 2: research.mjs を使わず、SDKのコマンドを直接実行する ▼▼▼
+      - name: Research with Claude Agent SDK Command
         run: |
-          cat > research.mjs <<'EOF'
-          import { query } from '@anthropic-ai/claude-agent-sdk';
-          import fs from 'fs';
-          
-          async function main() {
-            try {
-              const theme = process.env.THEME || '';
-              const target = process.env.TARGET || '';
-              const today = new Date().toISOString().slice(0,10);
-              const artifactsDir = '.note-artifacts';
-              fs.mkdirSync(artifactsDir, { recursive: true });
-              const sys = [
-                'あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。',
-                '事実ベース・一次情報優先・本文内にMarkdownリンクで出典を埋め込むこと。',
-                '十分な分量（目安: 2,000語以上）。各節で出典を本文に埋め込む。',
-                'WebSearch と WebFetch を必ず使用し、一次情報（公的機関・規格・論文・公式）を優先する。',
-              ].join('\n');
-              const userPrompt = `以下のテーマとターゲットに対する最終版のリサーチレポートを作成してください。\n【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。事実ベースで一次情報を最優先し、本文にMarkdownリンクで出典を埋め込んでください。\n---\nテーマ: ${theme}\nターゲット: ${target}\n現在日付: ${today}`;
-              
-              const messages = [];
-              
-              // ▼▼▼ 変更点：APIキーとモデル名を明示的に指定し、try...catchでエラーの詳細を取得する ▼▼▼
-              for await (const msg of query({
-                prompt: userPrompt,
-                apiKey: process.env.ANTHROPIC_API_KEY, // APIキーを明示的に渡す
-                options: {
-                  model: 'claude-3-5-sonnet-20240620', // モデル名を明示的に指定
-                  customSystemPrompt: sys,
-                  allowedTools: ['WebSearch','WebFetch'],
-                },
-              })) { messages.push(msg); }
-              
-              const assistantTexts = messages.filter(m=>m.type==='assistant').map(m=>{
-                const c=m.message?.content; if(Array.isArray(c)){return c.filter(b=>b?.type==='text').map(b=>b.text).join('\n');} return '';
-              }).filter(Boolean).join('\n\n');
-              
-              fs.writeFileSync(`${artifactsDir}/research.md`, assistantTexts || '');
-              try { fs.writeFileSync(`${artifactsDir}/research_trace.json`, JSON.stringify(messages, null, 2)); } catch {}
+          # 成果物を保存するディレクトリを作成
+          mkdir -p .note-artifacts
 
-            } catch (error) {
-              console.error("--- Detailed Error Information ---");
-              console.error(error); // エラーオブジェクト全体をログに出力
-              console.error("---------------------------------");
-              process.exit(1);
-            }
-          }
-          main();
+          # プロンプトをファイルに保存
+          cat > user_prompt.txt <<EOF
+          以下のテーマとターゲットに対する最終版のリサーチレポートを作成してください。
+          【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。事実ベースで一次情報を最優先し、本文にMarkdownリンクで出典を埋め込んでください。
+          ---
+          テーマ: ${{ env.THEME }}
+          ターゲット: ${{ env.TARGET }}
+          現在日付: $(date +%Y-%m-%d)
           EOF
-          node research.mjs
+
+          # システムプロンプトをファイルに保存
+          cat > system_prompt.txt <<EOF
+          あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。
+          事実ベース・一次情報優先・本文内にMarkdownリンクで出典を埋め込むこと。
+          十分な分量（目安: 2,000語以上）。各節で出典を本文に埋め込む。
+          WebSearch と WebFetch を必ず使用し、一次情報（公的機関・規格・論文・公式）を優先する。
+          EOF
+          
+          # SDKの "query" コマンドを直接実行する
+          # --prompt-file でプロンプトを渡し、結果を research.md にリダイレクト（保存）する
+          query --prompt-file user_prompt.txt \
+                --system-prompt-file system_prompt.txt \
+                --model claude-3-5-sonnet-20240620 \
+                --tool WebSearch \
+                --tool WebFetch > .note-artifacts/research.md
 
       - name: Collect research
         id: collect
         run: |
+          # research.mdが空でないことを確認
+          if [ ! -s .note-artifacts/research.md ]; then
+            echo "::error::Research result file is empty."
+            exit 1
+          fi
           b64=$(base64 -w 0 .note-artifacts/research.md 2>/dev/null || base64 .note-artifacts/research.md)
           echo "research_b64<<EOF" >> $GITHUB_OUTPUT
           echo "$b64" >> $GITHUB_OUTPUT
@@ -137,7 +125,6 @@ jobs:
           name: research-artifacts
           path: |
             .note-artifacts/research.md
-            .note-artifacts/research_trace.json
   write:
     name: Write (Claude Sonnet 4.0)
     needs: research
