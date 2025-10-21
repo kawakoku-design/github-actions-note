@@ -72,12 +72,12 @@ jobs:
           npm init -y
           npm i -g @anthropic-ai/claude-agent-sdk
 
-      # ▼▼▼ 変更点：npmでインストールしたコマンドの場所をシステムに教える ▼▼▼
-      - name: Add npm global bin to PATH
-        run: echo "$(npm bin -g)" >> $GITHUB_PATH
-
+      # ▼▼▼ 変更点：コマンドのフルパスを調べて、直接実行する ▼▼▼
       - name: Research with Claude Agent SDK Command
         run: |
+          # npmでグローバルインストールされたコマンドの場所を取得する
+          NPM_GLOBAL_BIN=$(npm bin -g)
+
           mkdir -p .note-artifacts
 
           cat > user_prompt.txt <<EOF
@@ -96,8 +96,8 @@ jobs:
           WebSearch と WebFetch を必ず使用し、一次情報（公的機関・規格・論文・公式）を優先する。
           EOF
           
-          # これで 'query' コマンドが見つかるようになります
-          query --prompt-file user_prompt.txt \
+          # "query" ではなく、フルパス "${NPM_GLOBAL_BIN}/query" を使ってコマンドを実行する
+          "${NPM_GLOBAL_BIN}/query" --prompt-file user_prompt.txt \
                 --system-prompt-file system_prompt.txt \
                 --model claude-3-5-sonnet-20240620 \
                 --tool WebSearch \
