@@ -52,7 +52,6 @@ jobs:
     name: Research (CCSDK WebSearch/WebFetch)
     runs-on: ubuntu-latest
     env:
-      # ▼▼▼ 変更点 1: SDKが認識する可能性のある、両方の名前でAPIキーを設定する ▼▼▼
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       CLAUDE_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} 
       THEME: ${{ github.event.inputs.theme }}
@@ -71,16 +70,16 @@ jobs:
       - name: Install Claude Agent SDK
         run: |
           npm init -y
-          # -g はグローバルインストールを意味し、コマンドとして実行できるようになる
           npm i -g @anthropic-ai/claude-agent-sdk
 
-      # ▼▼▼ 変更点 2: research.mjs を使わず、SDKのコマンドを直接実行する ▼▼▼
+      # ▼▼▼ 変更点：npmでインストールしたコマンドの場所をシステムに教える ▼▼▼
+      - name: Add npm global bin to PATH
+        run: echo "$(npm bin -g)" >> $GITHUB_PATH
+
       - name: Research with Claude Agent SDK Command
         run: |
-          # 成果物を保存するディレクトリを作成
           mkdir -p .note-artifacts
 
-          # プロンプトをファイルに保存
           cat > user_prompt.txt <<EOF
           以下のテーマとターゲットに対する最終版のリサーチレポートを作成してください。
           【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。事実ベースで一次情報を最優先し、本文にMarkdownリンクで出典を埋め込んでください。
@@ -90,7 +89,6 @@ jobs:
           現在日付: $(date +%Y-%m-%d)
           EOF
 
-          # システムプロンプトをファイルに保存
           cat > system_prompt.txt <<EOF
           あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。
           事実ベース・一次情報優先・本文内にMarkdownリンクで出典を埋め込むこと。
@@ -98,8 +96,7 @@ jobs:
           WebSearch と WebFetch を必ず使用し、一次情報（公的機関・規格・論文・公式）を優先する。
           EOF
           
-          # SDKの "query" コマンドを直接実行する
-          # --prompt-file でプロンプトを渡し、結果を research.md にリダイレクト（保存）する
+          # これで 'query' コマンドが見つかるようになります
           query --prompt-file user_prompt.txt \
                 --system-prompt-file system_prompt.txt \
                 --model claude-3-5-sonnet-20240620 \
@@ -109,7 +106,6 @@ jobs:
       - name: Collect research
         id: collect
         run: |
-          # research.mdが空でないことを確認
           if [ ! -s .note-artifacts/research.md ]; then
             echo "::error::Research result file is empty."
             exit 1
