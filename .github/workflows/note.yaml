@@ -278,7 +278,6 @@ jobs:
           b64=$(base64 -w 0 .note-artifacts/final.json 2>/dev/null || base64 .note-artifacts/final.json)
           echo "title<<EOF" >> $GITHUB_OUTPUT; echo "$title" >> $GITHUB_OUTPUT; echo "EOF" >> $GITHUB_OUTPUT
           echo "final_b64<<EOF" >> $GITHUB_OUTPUT; echo "$b64" >> $GITHUB_OUTPUT; echo "EOF" >> $GITHUB_OUTPUT
-
   post:
     name: Post to note.com (Playwright)
     needs: factcheck
@@ -331,7 +330,6 @@ jobs:
           TAGS: ${{ steps.draft.outputs.TAGS }}
           STATE_PATH: ${{ steps.state.outputs.STATE_PATH }}
         run: |
-          # ▼▼▼ 変更点：詳細なログと、エラー時のスクリーンショット機能を追加 ▼▼▼
           cat > post.mjs <<'EOF'
           import { chromium } from 'playwright';
           import { marked } from 'marked';
@@ -353,7 +351,7 @@ jobs:
             browser = await chromium.launch({ headless: true, args: ['--lang=ja-JP'] });
             const context = await browser.newContext({ storageState: STATE_PATH, locale: 'ja-JP' });
             const page = await context.newPage();
-            page.setDefaultTimeout(120000); // タイムアウトを2分に延長
+            page.setDefaultTimeout(120000);
 
             console.log(`2. Navigating to ${START_URL}...`);
             await page.goto(START_URL, { waitUntil: 'domcontentloaded' });
@@ -366,7 +364,9 @@ jobs:
 
             const bodySelector = 'div[contenteditable="true"][role="textbox"]';
             console.log(`5. Waiting for body selector: ${bodySelector}`);
-            await bodyBox = page.locator(bodySelector).first();
+            
+            // ▼▼▼ 変更点：私のタイプミスを修正しました ▼▼▼
+            const bodyBox = page.locator(bodySelector).first();
             await bodyBox.waitFor({ state: 'visible' });
             
             console.log('6. Typing body content...');
@@ -411,8 +411,6 @@ jobs:
           }
           EOF
           node post.mjs
-
-      # ▼▼▼ 変更点：成功時も失敗時も、とにかくスクリーンショットをアップロードする ▼▼▼
       - name: Upload screenshot
         if: always()
         uses: actions/upload-artifact@v4
