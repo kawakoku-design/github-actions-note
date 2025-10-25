@@ -110,7 +110,6 @@ jobs:
 
               console.log('--- Generating report with Claude... ---');
 
-              // ▼▼▼ 変更点 1/3: モデル名をClaude 3 Haikuに変更 ▼▼▼
               const { text } = await generateText({
                 model: anthropic('claude-3-haiku-20240307'),
                 system: systemPrompt,
@@ -189,7 +188,6 @@ jobs:
           const theme=process.env.THEME||''; const target=process.env.TARGET||''; const message=process.env.MESSAGE||''; const cta=process.env.CTA||'';
           const inputTags=(process.env.INPUT_TAGS||'').split(',').map(s=>s.trim()).filter(Boolean);
           const researchReport=fs.readFileSync('.note-artifacts/research.md','utf8');
-          // ▼▼▼ 変更点 2/3: モデル名をClaude 3 Haikuに変更 ▼▼▼
           const modelName='claude-3-haiku-20240307';
           function extractJsonFlexible(raw){const t=(raw||'').trim().replace(/\u200B/g,'');try{return JSON.parse(t);}catch{}const m=t.match(/```[a-zA-Z]*\s*([\s\S]*?)\s*```/);if(m&&m[1]){try{return JSON.parse(m[1].trim());}catch{}}const f=t.indexOf('{'),l=t.lastIndexOf('}');if(f!==-1&&l!==-1&&l>f){const c=t.slice(f,l+1);try{return JSON.parse(c);}catch{}}return null;}
           async function repairJson(raw){const sys='入力から {"title":string,"draftBody":string,"tags":string[]} のJSONのみ返答。';const {text}=await generateText({model:anthropic(modelName),system:sys,prompt:String(raw),temperature:0,maxTokens:8000});return extractJsonFlexible(text||'');}
@@ -253,7 +251,6 @@ jobs:
           import { anthropic } from '@ai-sdk/anthropic';
           import fs from 'fs';
           const draft=JSON.parse(fs.readFileSync('.note-artifacts/draft.json','utf8'));
-          // ▼▼▼ 変更点 3/3: モデル名をClaude 3 Haikuに変更 ▼▼▼
           const modelName='claude-3-haiku-20240307';
           const TAVILY_API_KEY=process.env.TAVILY_API_KEY||'';
           if(!TAVILY_API_KEY){ console.error('TAVILY_API_KEY is not set'); process.exit(1); }
@@ -278,6 +275,7 @@ jobs:
           b64=$(base64 -w 0 .note-artifacts/final.json 2>/dev/null || base64 .note-artifacts/final.json)
           echo "title<<EOF" >> $GITHUB_OUTPUT; echo "$title" >> $GITHUB_OUTPUT; echo "EOF" >> $GITHUB_OUTPUT
           echo "final_b64<<EOF" >> $GITHUB_OUTPUT; echo "$b64" >> $GITHUB_OUTPUT; echo "EOF" >> $GITHUB_OUTPUT
+
   post:
     name: Post to note.com (Playwright)
     needs: factcheck
@@ -354,17 +352,14 @@ jobs:
             page.setDefaultTimeout(120000);
 
             console.log(`2. Navigating to ${START_URL}...`);
-            // ▼▼▼ 変更点 1: ページの読み込み完了をより確実に待つように変更 ▼▼▼
             await page.goto(START_URL, { waitUntil: 'networkidle' });
 
-            // ▼▼▼ 変更点 2: タイトル入力欄のセレクタを、より堅牢なものに変更 ▼▼▼
             const titleSelector = 'textarea[aria-label="タイトル"]';
             console.log(`3. Waiting for title selector: ${titleSelector}`);
             await page.waitForSelector(titleSelector);
             await page.fill(titleSelector, rawTitle);
             console.log('4. Title filled successfully.');
 
-            // ▼▼▼ 変更点 3: 本文入力欄のセレクタを、より堅牢なものに変更 ▼▼▼
             const bodySelector = 'div.o-editor_note__body';
             console.log(`5. Waiting for body selector: ${bodySelector}`);
             const bodyBox = page.locator(bodySelector).first();
@@ -376,7 +371,6 @@ jobs:
             console.log('7. Body content typed successfully.');
 
             if(!IS_PUBLIC){
-              // ▼▼▼ 変更点 4: 下書き保存ボタンのセレクタを、より堅牢なものに変更 ▼▼▼
               const saveBtnSelector = 'button[data-name="save-button"]';
               console.log(`8. Waiting for draft save button: ${saveBtnSelector}`);
               const saveBtn = page.locator(saveBtnSelector).first();
@@ -400,10 +394,10 @@ jobs:
             console.error("--- An error occurred during Playwright execution ---");
             console.error(error);
             if (browser) {
-              const pages = await browser.contexts()[0]?.pages();
+              const pages = await browser.contexts()?.pages();
               if (pages && pages.length > 0) {
                 console.log('Attempting to take error screenshot...');
-                await pages[0].screenshot({ path: 'error_screenshot.png', fullPage: true });
+                await pages.screenshot({ path: 'error_screenshot.png', fullPage: true });
                 console.log('Screenshot saved as error_screenshot.png');
               }
             }
@@ -417,7 +411,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: note-screenshot
-          path: "*.png"
           name: note-screenshot
           path: "*.png"
