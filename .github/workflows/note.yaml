@@ -354,18 +354,19 @@ jobs:
             page.setDefaultTimeout(120000);
 
             console.log(`2. Navigating to ${START_URL}...`);
-            await page.goto(START_URL, { waitUntil: 'domcontentloaded' });
+            // ▼▼▼ 変更点 1: ページの読み込み完了をより確実に待つように変更 ▼▼▼
+            await page.goto(START_URL, { waitUntil: 'networkidle' });
 
-            const titleSelector = 'textarea[placeholder*="タイトル"]';
+            // ▼▼▼ 変更点 2: タイトル入力欄のセレクタを、より堅牢なものに変更 ▼▼▼
+            const titleSelector = 'textarea[aria-label="タイトル"]';
             console.log(`3. Waiting for title selector: ${titleSelector}`);
             await page.waitForSelector(titleSelector);
             await page.fill(titleSelector, rawTitle);
             console.log('4. Title filled successfully.');
 
-            const bodySelector = 'div[contenteditable="true"][role="textbox"]';
+            // ▼▼▼ 変更点 3: 本文入力欄のセレクタを、より堅牢なものに変更 ▼▼▼
+            const bodySelector = 'div.o-editor_note__body';
             console.log(`5. Waiting for body selector: ${bodySelector}`);
-            
-            // ▼▼▼ 変更点：私のタイプミスを修正しました ▼▼▼
             const bodyBox = page.locator(bodySelector).first();
             await bodyBox.waitFor({ state: 'visible' });
             
@@ -375,7 +376,8 @@ jobs:
             console.log('7. Body content typed successfully.');
 
             if(!IS_PUBLIC){
-              const saveBtnSelector = 'button:has-text("下書き保存")';
+              // ▼▼▼ 変更点 4: 下書き保存ボタンのセレクタを、より堅牢なものに変更 ▼▼▼
+              const saveBtnSelector = 'button[data-name="save-button"]';
               console.log(`8. Waiting for draft save button: ${saveBtnSelector}`);
               const saveBtn = page.locator(saveBtnSelector).first();
               await saveBtn.waitFor({ state: 'visible' });
@@ -383,7 +385,7 @@ jobs:
               console.log('9. Clicking draft save button...');
               await saveBtn.click();
               
-              const confirmationSelector = 'text=保存しました';
+              const confirmationSelector = 'text=下書き保存しました';
               console.log(`10. Waiting for confirmation: "${confirmationSelector}"`);
               await page.locator(confirmationSelector).waitFor({ timeout: 10000 });
               console.log('11. Draft saved successfully!');
@@ -415,5 +417,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          name: note-screenshot
+          path: "*.png"
           name: note-screenshot
           path: "*.png"
